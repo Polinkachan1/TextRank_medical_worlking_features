@@ -21,7 +21,7 @@ def init_db():
 
 def get_from_db(entry_id):
     conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row  # ← THIS is important
+    conn.row_factory = sqlite3.Row
     result = conn.execute(''' 
             SELECT input_type, content FROM entries
             WHERE id = ?
