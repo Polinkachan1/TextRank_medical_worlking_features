@@ -58,7 +58,7 @@ def add_medicine(medicine, official_side_effects):
     conn = sqlite3.connect(DB_PATH)
     pobochki_json = json.dumps(official_side_effects, ensure_ascii=False)
     conn.execute('''
-        INSERT INTO medicines (medicine, ofic_pobochki)
+        INSERT INTO medicines (medicine_name, official_side_effects)
         VALUES (?, ?)
     ''', (medicine, pobochki_json))
     conn.commit()
@@ -70,7 +70,7 @@ def get_medicine(medicine):
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     result = conn.execute('''
-        SELECT * FROM medicines WHERE medicine = ?
+        SELECT * FROM medicines WHERE medicine_name = ?
     ''', (medicine,)).fetchone()
     conn.close()
     if result:
@@ -81,7 +81,7 @@ def get_medicine(medicine):
 def add_review(medicine_id, review_text):
     conn = sqlite3.connect(DB_PATH)
     conn.execute('''
-        INSERT INTO reviews (medicine_id, review)
+        INSERT INTO reviews (medicine_id, review_text)
         VALUES (?, ?)
     ''', (medicine_id, review_text))
     conn.commit()
@@ -91,7 +91,7 @@ def add_review(medicine_id, review_text):
 def get_reviews(medicine_id):
     conn = sqlite3.connect(DB_PATH)
     results = conn.execute('''
-        SELECT review FROM reviews WHERE medicine_id = ?
+        SELECT review_text FROM reviews WHERE medicine_id = ?
     ''', (medicine_id,)).fetchall()
     conn.close()
     return [row[0] for row in results]
