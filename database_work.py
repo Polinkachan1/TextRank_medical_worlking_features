@@ -54,9 +54,9 @@ def get_from_db(entry_id):
         return dict(result)
     return None
 
-def add_medicine(medicine, ofic_pobochki):
+def add_medicine(medicine, official_side_effects):
     conn = sqlite3.connect(DB_PATH)
-    pobochki_json = json.dumps(ofic_pobochki, ensure_ascii=False)
+    pobochki_json = json.dumps(official_side_effects, ensure_ascii=False)
     conn.execute('''
         INSERT INTO medicines (medicine, ofic_pobochki)
         VALUES (?, ?)
@@ -78,12 +78,12 @@ def get_medicine(medicine):
     return None
 
 
-def add_review(medicine_id, review):
+def add_review(medicine_id, review_text):
     conn = sqlite3.connect(DB_PATH)
     conn.execute('''
         INSERT INTO reviews (medicine_id, review)
         VALUES (?, ?)
-    ''', (medicine_id, review))
+    ''', (medicine_id, review_text))
     conn.commit()
     conn.close()
 
