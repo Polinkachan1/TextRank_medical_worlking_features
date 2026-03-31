@@ -37,8 +37,19 @@ def build_graph(links):
     symptom_nodes = [i for i in G.nodes() if G.nodes[i].get('type') == "effect"]
     return G
 
-def textrank():
-    pass
+def textrank(G):
+    if G.number_of_nodes() == 0:# спец штука, которая проверяет количество узлов
+        return {}
+    ranks = nx.pagerank(G, weight='weight')
+
+    symptom_ranks = {}
+    for node, rank in ranks.items():
+        if G.nodes[node].get('type') == 'effect':
+            symptom_ranks[node] = rank
+    sorted_ranks = dict(sorted(symptom_ranks.items(), key=lambda x: x[1], reverse=True))
+
+    return sorted_ranks
+
 
 def compare_feature():
     pass
