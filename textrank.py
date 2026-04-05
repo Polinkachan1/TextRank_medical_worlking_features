@@ -51,5 +51,41 @@ def textrank(G):
     return sorted_ranks
 
 
-def compare_feature():
-    pass
+def compare_feature(medicine_name, db_path="medical_data.db"):
+    print(f"Препарат: {medicine_name.upper()}")
+
+    links, medicines, official_effects = load_from_db(db_path) #данные загрузили
+
+    medicine_id = None
+    for klych, name in medicines.items():
+        if klych.lower() == medicine_name.lower():
+            medicine_id = klych
+            break
+    if medicine_id is None:
+        print(f"Препарат {medicine_name} не найден")
+        return
+
+    offic = official_effects.get(medicine_id, [])
+    print("\n Официальные побочные эффекты:")
+    for effect in offic:
+        print(f"- {effect}")
+
+    G = build_graph(links)
+    symptoms_rank = textrank(G)
+
+    not_offic = []
+    for sym, rank in symptoms_rank.items():
+        offic_lower = []
+        for i in offic:
+            offic_lower.append(i.lower())
+        if sym.lower() not in offic_lower:
+            not_offic.append((sym, rank))
+
+        print("\n Неочевидные побочные эффекты: ")
+        for symp, rank in not_offic:
+            print(f"{symp}(вес: {rank:4f})")
+            return not_offic
+
+
+
+
