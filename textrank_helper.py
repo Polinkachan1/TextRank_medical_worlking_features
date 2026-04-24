@@ -127,13 +127,16 @@ def build_and_save_links(medicine, db_path='medical_data.db'):
         )
     ''')
 
-    # Получаем отзывы
+    # Приводим поисковый запрос к нижнему регистру
+    search_term = medicine.lower().strip()
+
+    # Получаем отзывы через LIKE (частичное совпадение)
     cursor.execute('''
         SELECT reviews.review_text, reviews.medicine_id, medicines.medicine_name
         FROM reviews
         JOIN medicines ON medicines.id = reviews.medicine_id
-        WHERE reviews.review_text != "" AND medicines.medicine_name = ?
-    ''', (medicine,))
+        WHERE reviews.review_text != "" AND LOWER(medicines.medicine_name) LIKE ?
+    ''', (f'%{search_term}%',))
     rows = cursor.fetchall()
 
     if not rows:
@@ -141,6 +144,7 @@ def build_and_save_links(medicine, db_path='medical_data.db'):
         print(f"❌ Нет отзывов для '{medicine}'")
         return {}
 
+    # Берём первый найденный препарат
     medicine_id = rows[0][1]
 
     # Очищаем старые данные
@@ -237,6 +241,3 @@ def build_and_save_links(medicine, db_path='medical_data.db'):
 
     conn.commit()
     conn.close()
-
-    print(f"✅ Сохранено {len(ranked_candidates)} кандидатов для '{medicine}'")
-    return ranked_candidates

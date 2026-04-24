@@ -4,23 +4,31 @@ from working_with_text import normalize_phrase
 
 
 def load_from_db(medicine, db_path="medical_data.db"):
+    """
+    Загружает из базы данных:
+    - связи препарат-симптом (кандидаты на побочки)
+    - официальные побочные эффекты
+    """
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
+
+    search_term = medicine.lower().strip()
+
 
     cursor.execute("""
         SELECT drug_symptom_links.symptom, drug_symptom_links.weight
         FROM drug_symptom_links
         JOIN medicines ON medicines.id = drug_symptom_links.medicine_id
-        WHERE medicines.medicine_name = ?
+        WHERE LOWER(medicines.medicine_name) LIKE ?
         ORDER BY drug_symptom_links.weight DESC
-    """, (medicine,))
+    """, (f'%{search_term}%',))
     links = cursor.fetchall()
 
     cursor.execute("""
         SELECT id, official_side_effects
         FROM medicines
-        WHERE medicine_name = ?
-    """, (medicine,))
+        WHERE LOWER(medicine_name) LIKE ?
+    """, (f'%{search_term}%',))
     row = cursor.fetchone()
 
     conn.close()

@@ -82,11 +82,14 @@ def add_medicine(medicine, official_side_effects):
 def get_medicine(medicine):
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
+    search_term = medicine.lower().strip()
     result = conn.execute('''
         SELECT *
         FROM medicines
-        WHERE medicine_name = ?
-    ''', (medicine,)).fetchone()
+        WHERE LOWER(medicine_name) LIKE ?
+        LIMIT 1
+    ''', (f'%{search_term}%',)).fetchone()
+
     conn.close()
 
     if result:
