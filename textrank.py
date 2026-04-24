@@ -1,114 +1,122 @@
-import re
-import pymorphy2
 import sqlite3
 import json
-import networkx as nx # херь для графов
+from working_with_text import normalize_phrase
 
 
-morph = pymorphy2.MorphAnalyzer()
-
-
-def normalize_phrase(phrase):
-    if not phrase:
-        return ""
-    phrase = re.sub(r'[^\w\s]', ' ', phrase.lower())
-    words = phrase.split()
-
-    normalized = []
-    for word in words:
-        if len(word) > 2:
-            try:
-                parsed = morph.parse(word)[0]
-                normalized.append(parsed.normal_form)
-            except:
-                normalized.append(word)
-
-    return ' '.join(normalized)
-
-def load_from_db(medicine, db_path ="medical_path.db"):
+def load_from_db(medicine, db_path="medical_data.db"):
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
-    cursor.execute('''
-    select drug_symptom_links.id, medicines.medicine_name, drug_symptom_links.symptom, drug_symptom_links.weight from drug_symptom_links
-    join medicines on medicines.id = drug_symptom_links.medicine_id
-    where medicines.medicine_name = ?
-    ''', (medicine,))
+
+    cursor.execute("""
+        SELECT drug_symptom_links.symptom, drug_symptom_links.weight
+        FROM drug_symptom_links
+        JOIN medicines ON medicines.id = drug_symptom_links.medicine_id
+        WHERE medicines.medicine_name = ?
+        ORDER BY drug_symptom_links.weight DESC
+    """, (medicine,))
     links = cursor.fetchall()
-    cursor.execute('''select id, medicine_name, official_side_effects from medicines WHERE medicine_name = ?''', (medicine,))
-    official_info = cursor.fetchall()
+
+    cursor.execute("""
+        SELECT id, official_side_effects
+        FROM medicines
+        WHERE medicine_name = ?
+    """, (medicine,))
+    row = cursor.fetchone()
+
     conn.close()
-    official_side_effects = {}
-    medicines = {}
-    for med_id, name, official_text in official_info:
-        medicines[med_id] = name
-        if official_text:
-            symptoms = json.loads(official_text)
-            normalized_symptoms = [normalize_phrase(s) for s in symptoms]
-            official_side_effects[med_id] = normalized_symptoms
-        else:
-            symptoms = []
 
-        official_side_effects[med_id] = symptoms
-    return links, medicines, official_side_effects
+    medicine_id = None
+    official_effects = []
+    if row:
+        medicine_id = row[0]
+        if row[1]:
+            official_effects = [normalize_phrase(x) for x in json.loads(row[1])]
 
-def build_graph(links):
-    G = nx.Graph() # наш граф
-    for med_id, med_name, symptom, weight in links:
-        G.add_node(med_name, type='medicine')  # добавляем узел препарата
-        G.add_node(symptom, type="effect")  # добавляяем узел побочки
-        G.add_edge(med_id, symptom, weight=weight)  # добавили ребро между ними с вессом
-    medicine_nodes = [i for i in G.nodes() if G.nodes[i].get('type') == 'medicine']
-    symptom_nodes = [i for i in G.nodes() if G.nodes[i].get('type') == "effect"]
-    return G
+    return medicine_id, links, official_effects
 
-def textrank(G):
-    if G.number_of_nodes() == 0:# спец штука, которая проверяет количество узлов
-        return {}
-    ranks = nx.pagerank(G, weight='weight')
 
-    symptom_ranks = {}
-    for node, rank in ranks.items():
-        if G.nodes[node].get('type') == 'effect':
-            symptom_ranks[node] = rank
-    sorted_ranks = dict(sorted(symptom_ranks.items(), key=lambda x: x[1], reverse=True))
+def load_sentences_for_symptom(medicine_name, symptom, db_path='medical_data.db'):
+    """Загружает предложения для симптома из БД"""
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
 
-    return sorted_ranks
+    cursor.execute('''
+        SELECT sentence
+        FROM symptom_sentences ss
+        JOIN medicines m ON ss.medicine_id = m.id
+        WHERE m.medicine_name = ? AND ss.symptom = ?
+    ''', (medicine_name.lower(), symptom))
+
+    rows = cursor.fetchall()
+    conn.close()
+
+    return [row[0] for row in rows]
+
+
+def is_generic_single_word(symptom):
+    generic_words = {
+        "кожа", "губа", "глаз", "волос", "сустав",
+        "кровь", "настроение", "нос", "спина", "колено",
+        "поясница", "ресница"
+    }
+    norm = normalize_phrase(symptom)
+    words = norm.split()
+    return len(words) == 1 and words[0] in generic_words
+
+
+def is_part_of_official(symptom, official_effects):
+    sym_norm = normalize_phrase(symptom)
+    sym_words = set(sym_norm.split())
+
+    for official in official_effects:
+        off_norm = normalize_phrase(official)
+        off_words = set(off_norm.split())
+
+        if sym_norm == off_norm:
+            return True
+
+        if sym_words and sym_words.issubset(off_words):
+            return True
+
+    return False
 
 
 def compare_feature(medicine_name, db_path="medical_data.db"):
-    print(f"Препарат: {medicine_name.upper()}")
+    medicine_id, links, official_effects = load_from_db(medicine_name, db_path)
 
-    links, medicines, official_effects = load_from_db(medicine_name, db_path) #данные загрузили
+    if medicine_id is None:
+        return "<p>Препарат не найден.</p>"
 
-    medicine_id = list(medicines.keys())[0]
+    hidden_effects = []
+    for symptom, weight in links:
+        if is_generic_single_word(symptom):
+            continue
+        if is_part_of_official(symptom, official_effects):
+            continue
+        hidden_effects.append((symptom, weight))
 
-    offic = official_effects.get(medicine_id, [])
-    print("\n Официальные побочные эффекты:")
-    for effect in offic:
-        print(f"- {effect}")
-    offic_lower = [o.lower() for o in offic]
-    G = build_graph(links)
-    symptoms_rank = textrank(G)
-    not_offic = []
+    hidden_effects.sort(key=lambda x: x[1], reverse=True)
 
-    for sym, rank in symptoms_rank.items():
-        if sym.lower() not in offic_lower:
-            not_offic.append((sym, rank))
+    html = f"<h3>💊 Препарат: {medicine_name.upper()}</h3>"
+    html += "<p><b>📋 Официальные побочки:</b> "
+    html += ", ".join(official_effects) if official_effects else "нет"
+    html += "</p>"
 
-    not_offic.sort(key=lambda x: x[1], reverse=True)
+    if hidden_effects:
+        html += "<p><b>⚠️ Кандидаты на неявные побочки:</b></p><ul>"
+        for symptom, weight in hidden_effects[:10]:
+            html += f"<li><b>{symptom}</b> <span style='color: gray'>(score: {weight})</span><br>"
 
-    result = f"\n💊 ПРЕПАРАТ: {medicine_name.upper()}\n"
-    result += f"\n📋 Официальные побочки: {', '.join(offic) if offic else 'нет'}\n"
+            sentences = load_sentences_for_symptom(medicine_name, symptom, db_path)
+            if sentences:
+                for sent in sentences:
+                    html += f"<span style='color: #555; font-size: 0.9em;'>📝 &quot;{sent}&quot;</span><br>"
+            else:
+                html += "<span style='color: #888;'>❌ Нет предложений</span>"
 
-    if not_offic:
-        result += f"\n⚠️ НОВЫЕ (неявные) побочки:\n"
-        for sym, rank in not_offic[:10]:
-            result += f"   - {sym} (важность: {rank:.4f})\n"
+            html += "</li>"
+        html += "</ul>"
     else:
-        result += f"\n✅ Новых побочек не найдено\n"
+        html += "<p>✅ Новых кандидатов не найдено</p>"
 
-    return result
-
-
-
-
+    return html
